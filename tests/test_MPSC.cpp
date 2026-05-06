@@ -115,6 +115,38 @@ TEST(MPSCQueueMemoryTest, ShrinkToFit_ReclaimsPagesWhenIdle) {
 	EXPECT_EQ(Q::global_node_size_apprx(), (size_t)64);
 }
 
+TEST(MPSCQueueMemoryTest, ShrinkToFit_FailsWhenQueueIsNotEmpty) {
+	using Q = MPSC_queue<int, 64>;
+	Q q;
+
+	q.enqueue(7);
+	EXPECT_FALSE(q.shrink_to_fit());
+
+	int value = 0;
+	EXPECT_TRUE(q.try_dequeue(value));
+	EXPECT_EQ(value, 7);
+	EXPECT_TRUE(q.empty());
+}
+
+TEST(MPSCQueueMemoryTest, ShrinkToFit_FailsWhileAnotherInstanceLives) {
+	using Q = MPSC_queue<int, 64>;
+	Q primary;
+
+	{
+		Q secondary;
+		int value = 0;
+
+		Q::reserve_global_chunk(4);
+		primary.enqueue(11);
+		EXPECT_TRUE(primary.try_dequeue(value));
+		EXPECT_TRUE(primary.empty());
+		EXPECT_FALSE(primary.shrink_to_fit());
+	}
+
+	EXPECT_TRUE(primary.shrink_to_fit());
+	EXPECT_EQ(Q::global_node_size_apprx(), (size_t)64);
+}
+
 // -------------------------------------------------------------------------
 // III. Bulk Operation Tests
 // -------------------------------------------------------------------------
