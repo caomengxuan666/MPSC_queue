@@ -486,7 +486,7 @@ namespace daking {
         DAKING_ALWAYS_INLINE void enqueue_bulk(const_reference value, size_type n) {
             // N times thread_local operation, One time CAS operation.
             // So it is more efficient than N times enqueue.
-            if (n == 0) {
+            if (n == 0) DAKING_UNLIKELY {
                 return;
             }
 
@@ -514,7 +514,7 @@ namespace daking {
                 "Iterator must be at least input iterator.");
             static_assert(std::is_same_v<typename std::iterator_traits<InputIt>::value_type, value_type>,
                 "The value type of iterator must be same as MPSC_queue::value_type.");
-            if (n == 0) {
+            if (n == 0) DAKING_UNLIKELY {
                 return;
             }
 
