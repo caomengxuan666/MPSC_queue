@@ -181,6 +181,33 @@ TEST(MPSCQueueMemoryTest, ElasticPolicy_ReclaimsFullyFreePages) {
 	EXPECT_TRUE(q.empty());
 }
 
+TEST(MPSCQueueMemoryTest, ElasticPolicy_ReclaimsOnlyFullyFreePages) {
+	using ElasticQ = MPSC_queue<int, 8, 64, std::allocator<int>, daking::memory_policy::elastic>;
+	ElasticQ q;
+
+	ElasticQ::reserve_global_chunk(6);
+	const size_t before = ElasticQ::global_node_size_apprx();
+	EXPECT_GE(before, (size_t)6 * 8);
+
+	q.enqueue(31);
+	const size_t reclaimed = ElasticQ::reclaim_free_pages();
+	const size_t after = ElasticQ::global_node_size_apprx();
+
+	EXPECT_GT(reclaimed, (size_t)0);
+	EXPECT_LT(after, before);
+	EXPECT_GE(after, (size_t)8);
+
+	int value = 0;
+	EXPECT_TRUE(q.try_dequeue(value));
+	EXPECT_EQ(value, 31);
+	EXPECT_TRUE(q.empty());
+
+	q.enqueue(32);
+	EXPECT_TRUE(q.try_dequeue(value));
+	EXPECT_EQ(value, 32);
+	EXPECT_TRUE(q.empty());
+}
+
 TEST(MPSCQueueMemoryTest, ElasticPolicy_DoesNotReclaimLivePage) {
 	using ElasticQ = MPSC_queue<int, 16, 64, std::allocator<int>, daking::memory_policy::elastic>;
 	ElasticQ q;

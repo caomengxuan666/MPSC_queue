@@ -68,10 +68,8 @@ The likely direction:
 
 - Allocate fixed-size slabs/pages.
 - Keep chunks page-local or attach page ownership metadata to chunk groups.
-- Track per-page free node counts.
-- Reclaim only pages with all nodes returned and no active references.
-- Avoid adding atomics to the single-element enqueue fast path unless the benchmark
-  proves the trade-off is acceptable.
+- Avoid per-node atomics on the single-element enqueue/dequeue fast path.
+- Reclaim only pages whose nodes are all visible in free caches at reclaim time.
 
 ## Proposed Architecture
 
@@ -104,9 +102,9 @@ Current branch status:
 
 - `memory_policy::stable` exists and disables `shrink_to_fit()`.
 - `memory_policy::idle_reclaim` is the default and keeps today's behavior.
-- `memory_policy::elastic` is an opt-in prototype. It uses per-node page metadata,
-  per-page free counts, and `reclaim_free_pages()` to release pages whose nodes
-  have all returned to the global free stack.
+- `memory_policy::elastic` is an opt-in prototype. It uses per-node page metadata
+  and fixed-size page slabs, then scans free caches in `reclaim_free_pages()` to
+  release pages whose nodes are all free.
 
 ## Current Elastic Prototype
 
@@ -116,18 +114,19 @@ final throughput:
 - It is selected only by `memory_policy::elastic`.
 - Default `idle_reclaim` and `stable` allocation paths keep their thread-local
   chunk caches.
-- Elastic allocation and deallocation still use thread-local chunk caches. The
-  global mutex is only used when a thread refills or flushes a chunk and when
-  reclamation runs.
-- Each elastic node records its owning page. Each page tracks an approximate
-  free-node count.
-- Reclamation drains the global free-list under the mutex, optionally sweeps
-  recycled thread-local caches when no live thread hooks remain, marks fully
-  free pages, returns nodes from live pages to the free-list, and deallocates
-  reclaimable pages.
+- Elastic allocation reserves one page per thread-local chunk so page reclamation
+  has chunk-sized granularity instead of one large ever-growing page.
+- Elastic allocation and deallocation use the same thread-local chunk cache path
+  as the default policy. There is no per-node page counter update in the enqueue
+  or dequeue hot path.
+- Each elastic node records its owning page. Reclamation drains the global
+  free-list and the quiescent thread-local caches under the mutex, counts free
+  nodes per page, returns free nodes from live pages to the pool, and deallocates
+  fully free pages.
 - A page containing the queue dummy node or any queued item is not reclaimed.
 - The current public `reclaim_free_pages()` path is a quiescent reclaim hook. It
-  is not yet a fully concurrent online shrinker for active producers.
+  refuses to run when more than one thread-local hook is active, so it is not a
+  fully concurrent online shrinker for active producers.
 
 This is not the final low-jitter elastic architecture. It is a first correctness
 prototype for validating the page ownership model, the public API shape, and
