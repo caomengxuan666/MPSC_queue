@@ -243,7 +243,29 @@ cmake --build out/build/clang-local --target mpsc_vs_mpmc_benchmark
 | moodycamel | 4 | 1 | 34.82 |
 | moodycamel | 8 | 1 | 33.99 |
 
-**第五部分：Enqueue/Dequeue Latency**
+**第五部分：内存生命周期基准测试（稳定模式 vs 空闲回收）**
+
+这个基准测试在同一个队列上连续执行两轮生产/清空 burst。`stable` 模式会保留第一轮之后的全局池热状态；`idle_reclaim` 模式会在第一轮后调用 `shrink_to_fit()`，再从回收后的状态执行下一轮 burst。
+
+运行命令：
+
+```powershell
+cmake --build out/build/clang-local --target mpsc_bench_memory_cycle
+.\out\build\clang-local\mpsc_bench_memory_cycle.exe --benchmark_min_time=0.2s --benchmark_repetitions=1 --benchmark_counters_tabular=true
+```
+
+| 模式 | P (生产者) | 回收前节点数 | 回收后节点数 | **吞吐量 (M items/s)** | Shrink 耗时 (us) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| stable | 1 | 16.384k | 16.384k | 96.69 | - |
+| stable | 4 | 16.384k | 16.384k | 32.20 | - |
+| stable | 16 | 32.768k | 32.768k | 37.54 | - |
+| idle_reclaim | 1 | 32.768k | 256 | 93.94 | 3.5 |
+| idle_reclaim | 4 | 32.768k | 256 | 31.98 | 5.5 |
+| idle_reclaim | 16 | 262.144k | 256 | 37.01 | 135.2 |
+
+空闲回收路径可以把全局池激进地回收到最小 chunk 数，同时下一轮 burst 的吞吐仍处在同一档。但它仍然应该被视为静止期操作，不是在线弹性回收机制。
+
+**第六部分：Enqueue/Dequeue Latency**
 
 (此部分基于HdrHistogram，在Linux平台测试)
 我们得到了以下延迟表现：

@@ -243,7 +243,29 @@ Bulk enqueue:
 | moodycamel | 4 | 1 | 34.82 |
 | moodycamel | 8 | 1 | 33.99 |
 
-**Part V: Enqueue/Dequeue Latency**
+**Part V: Memory Lifecycle Benchmark (Stable vs Idle Reclaim)**
+
+This benchmark runs two production/drain bursts on the same queue. The `stable` mode keeps the warm global pool between bursts. The `idle_reclaim` mode calls `shrink_to_fit()` after the first burst and then measures the next burst from the reclaimed state.
+
+Command:
+
+```powershell
+cmake --build out/build/clang-local --target mpsc_bench_memory_cycle
+.\out\build\clang-local\mpsc_bench_memory_cycle.exe --benchmark_min_time=0.2s --benchmark_repetitions=1 --benchmark_counters_tabular=true
+```
+
+| Mode | P (Producers) | Nodes Before | Nodes After | **Throughput (M items/s)** | Shrink Time (us) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| stable | 1 | 16.384k | 16.384k | 96.69 | - |
+| stable | 4 | 16.384k | 16.384k | 32.20 | - |
+| stable | 16 | 32.768k | 32.768k | 37.54 | - |
+| idle_reclaim | 1 | 32.768k | 256 | 93.94 | 3.5 |
+| idle_reclaim | 4 | 32.768k | 256 | 31.98 | 5.5 |
+| idle_reclaim | 16 | 262.144k | 256 | 37.01 | 135.2 |
+
+The idle reclaim path aggressively returns the global pool to the minimum chunk count while keeping the next burst in the same throughput band. It should still be treated as a quiescent-state operation, not an online elastic reclamation mechanism.
+
+**Part VI: Enqueue/Dequeue Latency**
 
 (Based on HdrHistogram, Test on Linux)
 We get below performance：
